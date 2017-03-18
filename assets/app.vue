@@ -6,6 +6,7 @@
                 <option value="1">Rainbow</option>
                 <option value="2">Spectrum</option>
                 <option value="3">RGB</option>
+                <option value="4">Disco</option>
             </select>
 
             <div class="control hue">
@@ -56,6 +57,8 @@
                 <option value="0" selected="selected">Mono</option>
                 <option value="1">Chase</option>
                 <option value="2">Strobe</option>
+                <option value="3">Kitt</option>
+                <option value="4">Lightning</option>
             </select>
 
             <div class="control value">

@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdlib.h>
 #include <math.h>
 #include <FastLED.h>
 #include <ESP8266WiFi.h>
@@ -12,16 +13,18 @@
 #define NUM_LEDS 150
 
 int fps = 30;
-int wait = fps / 1000;
+int wait = 1000 / fps;
 int beat = 0;
 
-int16_t hue = 0;
-int16_t saturation = 255;
-int16_t value = 255;
+uint32_t lastBeat = millis();
+
+int32_t hue = 0;
+int32_t saturation = 255;
+int32_t value = 255;
 
 int hueMode = 0; // 0: mono, 2: rainbow, 3: spectrum, 4: RGB
 int saturationMode = 0; // 0: mono
-int valueMode = 0; // 0: mono, 1: chase
+int valueMode = 0; // 0: mono, 1: chase, 2: strobe, 3: kitt
 
 double hueSpeed = 0.0;
 double saturationSpeed = 0.0;
@@ -156,56 +159,82 @@ void socketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
     }
 }
 
-int calcHue(int i) {
+int calcHue(int i, float frameRandom[]) {
   switch(hueMode) {
     case 0:
+      // mono
       return beat * hueSpeed + hue;
       
       break;
     case 1:
+      // rainbow
       return i + beat * hueSpeed + hue;
       
       break;
     case 2:
-      return (i * 256) / 6 + beat * hueSpeed + hue;
+      // spectrum
+      return (i * 256) / 6 + beat * hueSpeed * 10 + hue;
       
       break;
     case 3:
-      return (i * 256) / 3 + beat * hueSpeed + hue;
+      // RGB
+      return (i * 256) / 3 + beat * hueSpeed * 10 + hue;
+      
+      break;
+    case 4:
+      //  disco
+      return round(beat * 0.1) * round(((1 + hueSpeed) * .5) * 300) + hue;
       
       break;
   }
 }
 
-int calcSaturation(int i) {
+int calcSaturation(int i, float frameRandom[]) {
   switch(saturationMode) {
     case 0:
+      // mono
       return saturation;
+      
       break;
   }
 }
 
-int calcValue(int i) {
-  uint8_t localValue = 1;
+int calcValue(int i, float frameRandom[]) {
+  double localValue;
   
   switch(valueMode) {
     case 0:
-      localValue =  value;
+      // mono
+      localValue = 255;
       break;
     case 1:
-      localValue =  (127 + sin(i + beat * (valueSpeed / 4)) * 127) * value / 255;
+      // chase
+      localValue = 127 + 127 * sin(i + beat * valueSpeed);
       break;
     case 2:
-      localValue =  (round(beat * (1 + valueSpeed) / 8) % 3 ? 0 : 255) * value /  255;
+      // strobe
+      localValue = round(beat * (1 + valueSpeed) / 2) % 3 ? 0 : 255;
+      break;
+    case 3:
+      // kitt
+      localValue = (1.0 - abs(((1.0 + valueSpeed) / 2.0) * NUM_LEDS - i) / 30.0, 0) * 255.0;
+      break;
+    case 4:
+      // lightning
+      float wave = sin(.03 * beat);
+      localValue = (wave > 0 ? wave : 0) * frameRandom[0] * ((30 - abs(frameRandom[1] * NUM_LEDS - i)) / 30) * 255;
+      
       break;
   }
-
-  return localValue;
+  
+  return localValue >= 0 ? localValue : 0;
 }
 
-void heart(int wait) {
+void heart() {
+  float frameRandom[] = {((double) rand() / (RAND_MAX)), ((double) rand() / (RAND_MAX))};
+  
   for(int i = 0; i < NUM_LEDS; i++) {
-    CHSV hsv = CHSV(calcHue(i), calcSaturation(i), calcValue(i)); // Hue 255 (red) appears to trigger a FastLED bug, converts to blue
+    CHSV hsv = CHSV(calcHue(i, frameRandom), calcSaturation(i, frameRandom), calcValue(i, frameRandom));
     CRGB rgb;
     
     hsv2rgb_spectrum(hsv, rgb);
@@ -216,8 +245,6 @@ void heart(int wait) {
   FastLED.show();
 
   beat++;
-
-  delay(wait);
 }
 
 void setup() {
@@ -261,6 +288,12 @@ void setup() {
 void loop() {
 	server.handleClient();
   webSocket.loop();
-  
-  heart(wait);
+
+  uint32_t now = millis();
+
+  if(now - lastBeat > wait) {
+    lastBeat = now;
+    
+    heart();
+  }
 }
